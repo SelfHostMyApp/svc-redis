@@ -1,0 +1,110 @@
+service_id: redis
+service_name: redis
+service_unit_name: redis
+service_image: docker.io/bitnami/redis:7.2
+version: "7.2"
+service_ip: "{{ redis_container_ip }}"
+service_ports:
+  - target: 6379
+    published: {{ redis_service_port }}
+    protocol: tcp
+service_env:
+  - name: REDIS_PORT
+    value: "{{ redis_service_port | string }}"
+  - name: ALLOW_EMPTY_PASSWORD
+    value: "no"
+  - name: REDIS_DISABLE_COMMANDS
+    value: FLUSHDB,FLUSHALL
+service_volumes:
+  - name: data
+    source: "{{ redis_data_volume }}"
+    target: /bitnami/redis/data
+    driver: local
+    size: "{{ redis_container_storage_gb }}Gi"
+service_resources:
+  memory_mb: "{{ redis_container_memory_mb }}"
+  cpu_cores: "{{ redis_container_cpu_cores }}"
+service_namespace: "{{ redis_kubernetes_namespace }}"
+service_replicas: "{{ redis_kubernetes_replicas }}"
+service_packages:
+  - redis-server
+  - redis-tools
+service_services:
+  - name: redis-server
+    enabled: true
+    state: started
+service_container:
+  vmid: "{{ redis_container_vmid }}"
+  hostname: "{{ service_name }}"
+  ostemplate: "{{ redis_container_template }}"
+  disk: "{{ redis_container_storage_gb }}"
+  cores: "{{ redis_container_cpu_cores }}"
+  memory: "{{ redis_container_memory_mb }}"
+  swap: "{{ redis_container_swap_mb }}"
+  bridge: "{{ redis_container_bridge }}"
+  cidr: "{{ redis_container_cidr }}"
+  gateway: "{{ redis_container_gateway }}"
+  interface: "{{ redis_container_interface }}"
+  onboot: yes
+  unprivileged: yes
+  features: nesting=1,keyctl=1
+requires: []
+exports:
+  env:
+    - name: CACHE_HOST
+      value: "{{ service_ip }}"
+    - name: CACHE_PORT
+      value: "{{ redis_service_port | string }}"
+    - name: CACHE_PASSWORD
+      value: "{{ redis_password }}"
+storage:
+  - name: data
+    path: /bitnami/redis/data
+    size: "{{ redis_container_storage_gb }}G"
+health:
+  cmd:
+    - python3
+    - -c
+    - >
+      import socket, sys;
+      password={{ redis_password | to_json }};
+      s=socket.create_connection(('127.0.0.1', {{ redis_service_port }}), timeout=5);
+      resp=b'';
+      if password:
+          s.sendall(f'AUTH {password}\r\n'.encode());
+          resp=s.recv(1024);
+          if not resp.startswith(b'+OK'):
+              sys.exit(1);
+      s.sendall(b'PING\r\n');
+      resp=s.recv(1024);
+      sys.exit(0 if resp.startswith(b'+PONG') else 1)
+  interval: 10s
+  timeout: 5s
+  retries: 5
+runtime_templates:
+  proxmox: proxmox.yml.j2
+  docker: docker.yml.j2
+  podman: podman.yml.j2
+  kubernetes: kubernetes.yml.j2
+  baremetal: baremetal.yml.j2
+secrets:
+  env:
+    - name: REDIS_PASSWORD
+      value: "{{ redis_password }}"
+
+redis_service_port: 6379
+redis_data_volume: redis-data
+redis_container_vmid: 201
+redis_container_ip: 192.168.100.11
+redis_container_gateway: 192.168.100.1
+redis_container_cidr: 24
+redis_container_bridge: vmbr0
+redis_container_interface: eth0
+redis_container_cpu_cores: 1
+redis_container_memory_mb: 1024
+redis_container_swap_mb: 1024
+redis_container_storage_gb: 10
+redis_container_template: local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst
+redis_password: "{{ lookup('env', 'REDIS_PASSWORD') | default('change-me-redis', true) }}"
+redis_kubernetes_namespace: caches
+redis_kubernetes_replicas: 1
